@@ -6,6 +6,7 @@ import os
 import functools
 import platform
 import threading
+import subprocess
 try:
     from bs4 import BeautifulSoup as bs
     import requests as rq
@@ -252,9 +253,12 @@ class Utilities:
                 os.remove('temp_output' + str(i))
 
         if extension == 'java':
-            os.system('rm ' + basename + '*.class')
+            os.remove(basename + '*.class')
         if extension == 'cpp':
-            os.system('rm ' + basename)
+            if platform.system() == "Windows":
+                os.remove(basename + ".exe")
+            else:
+                os.remove(basename)
 
     @staticmethod
     def handle_kbd_interrupt(site, contest, problem):
@@ -329,50 +333,55 @@ class Utilities:
                     compile_status = 0
                 else:
                     compile_status = os.system(
-                        compiler + ' \'' + problem_path + '.' + extension + '\'')
+                        compiler + ' \"' + problem_path + '.' + extension + '\"')
 
                 if compile_status == 0:
 
                     # Compiled successfully
-                    timeout_command = 'timeout' if platform.system() == 'Linux' else 'gtimeout'
                     for i in range(num_cases):
-                        status = os.system(timeout_command + ' 2s ' + execute_command + ' < ' + os.path.join(
-                            testcases_path, 'Input' + str(i)) + ' > temp_output' + str(i))
+                        input_file = os.path.join(
+                            testcases_path, 'Input' + str(i))
+                        with open(input_file, "r") as f:
+                            input_data = f.read()
+                            try:
+                                output = subprocess.run([execute_command], timeout=2, input = input_data,
+                                encoding="ascii", capture_output=True)
+                                status = output.returncode
+                            except subprocess.TimeoutExpired:
+                                status = 31744
+                            with open(os.path.join(testcases_path, 'Output' + str(i)), 'r') as out_handler:
+                                expected_output = out_handler.read().strip().split('\n')
+                                expected_output = '\n'.join(
+                                    [line.strip() for line in expected_output])
+                                expected_outputs += [expected_output]
 
-                        with open(os.path.join(testcases_path, 'Output' + str(i)), 'r') as out_handler:
-                            expected_output = out_handler.read().strip().split('\n')
-                            expected_output = '\n'.join(
-                                [line.strip() for line in expected_output])
-                            expected_outputs += [expected_output]
+                                if status == 31744:
+                                    # Time Limit Exceeded
+                                    results += [Utilities.colors['BOLD'] + Utilities.colors[
+                                        'YELLOW'] + 'TLE' + Utilities.colors['ENDC']]
+                                    user_outputs += ['']
 
-                            if status == 31744:
-                                # Time Limit Exceeded
-                                results += [Utilities.colors['BOLD'] + Utilities.colors[
-                                    'YELLOW'] + 'TLE' + Utilities.colors['ENDC']]
-                                user_outputs += ['']
-
-                            elif status == 0:
-                                # Ran successfully
-                                with open('temp_output' + str(i), 'r') as temp_handler:
-                                    user_output = temp_handler.read().strip().split('\n')
+                                elif status == 0:
+                                    # Ran successfully
+                                    user_output = output.stdout.strip().split('\n')
                                     user_output = '\n'.join(
                                         [line.strip() for line in user_output])
                                     user_outputs += [user_output]
 
-                                if expected_output == user_output:
-                                    # All Correct
-                                    results += [Utilities.colors['BOLD'] + Utilities.colors[
-                                        'GREEN'] + 'AC' + Utilities.colors['ENDC']]
-                                else:
-                                    # Wrong Answer
-                                    results += [Utilities.colors['BOLD'] + Utilities.colors[
-                                        'RED'] + 'WA' + Utilities.colors['ENDC']]
+                                    if expected_output == user_output:
+                                        # All Correct
+                                        results += [Utilities.colors['BOLD'] + Utilities.colors[
+                                            'GREEN'] + 'AC' + Utilities.colors['ENDC']]
+                                    else:
+                                        # Wrong Answer
+                                        results += [Utilities.colors['BOLD'] + Utilities.colors[
+                                            'RED'] + 'WA' + Utilities.colors['ENDC']]
 
-                            else:
-                                # Runtime Error
-                                results += [Utilities.colors['BOLD'] +
-                                            Utilities.colors['RED'] + 'RTE' + Utilities.colors['ENDC']]
-                                user_outputs += ['']
+                                else:
+                                    # Runtime Error
+                                    results += [Utilities.colors['BOLD'] +
+                                                Utilities.colors['RED'] + 'RTE' + Utilities.colors['ENDC']]
+                                    user_outputs += ['']
                 else:
                     # Compilation error occurred
                     message = Utilities.colors['BOLD'] + Utilities.colors[
@@ -429,9 +438,12 @@ class Utilities:
         """
         sys.setrecursionlimit(10000)
         MAX_TRIES = 3
+        headers = {
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.130 Safari/537.36'
+        }
         try:
             for try_count in range(MAX_TRIES):
-                r = rq.get(url)
+                r = rq.get(url, headers=headers)
                 if r.status_code == 200:
                     break
             if try_count >= MAX_TRIES:
